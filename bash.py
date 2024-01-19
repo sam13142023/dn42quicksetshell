@@ -112,18 +112,54 @@ def pull_and_restart():
     subprocess.run(['python3', 'bash.py'])
     exit()
 
+def update_bird_config():
+    print("设置 BIRD 配置文件")
+
+    # 获取用户输入的信息
+    own_as = input("请输入你的asn: ")
+    own_ip = input("请输入想要宣告IP: ")
+    own_ipv6 = input("请输入想要宣告的IPv6: ")
+    own_net = input("请输入你的IP段: ")
+    own_net_v6 = input("请输入你的IPv6段: ")
+
+    # 读取示例配置文件
+    example_conf_path = os.path.join(os.path.dirname(__file__), 'exampleconf')
+    with open(example_conf_path, 'r') as example_conf_file:
+        example_conf_content = example_conf_file.read()
+
+    # 替换示例配置文件中的信息
+    updated_conf_content = example_conf_content.replace("$OWNAS", own_as)\
+                                               .replace("$OWNIP", own_ip)\
+                                               .replace("$OWNIPv6", own_ipv6)\
+                                               .replace("$OWNNET", own_net)\
+                                               .replace("$OWNNETv6", own_net_v6)
+
+    # 检查是否存在旧的配置文件，如果存在则备份
+    bird_conf_path = '/etc/bird/bird.conf'
+    if os.path.exists(bird_conf_path):
+        backup_path = '/etc/bird/bird.conf.old'
+        subprocess.run(['mv', bird_conf_path, backup_path])
+        print(f"旧的配置文件已备份为 {backup_path}.")
+
+    # 将更新后的配置写入新的文件
+    with open(bird_conf_path, 'w') as bird_conf_file:
+        bird_conf_file.write(updated_conf_content)
+
+    print(f"新的配置文件已保存到 {bird_conf_path}.")
+
 def main():
     while True:
         # 获取本地 Git 仓库的最新 commit hash，并在主菜单中显示前6位
         commit_hash = get_git_commit_hash()[:6]
 
-        print(f"\nDN42 quickshell by sam\n版本号:v0.1.0( {commit_hash})")
+        print(f"\nDN42 quickshell by sam\n版本号: v0.1.0 ({commit_hash})")
         print("\n请选择功能:")
         print("1. 更新roa")
         print("2. 创建新的BGP会话（仅v4）")
         print("3. 保存你的节点信息")
         print("4. 从远程拉取更新并重启程序")
-        print("5. 退出")
+        print("5. 更新 BIRD 配置文件")
+        print("6. 退出")
 
         choice = input("输入数字以选择功能: ")
 
@@ -136,6 +172,8 @@ def main():
         elif choice == '4':
             pull_and_restart()
         elif choice == '5':
+            update_bird_config()
+        elif choice == '6':
             print("程序结束。")
             break
         else:
