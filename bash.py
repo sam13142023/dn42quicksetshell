@@ -5,8 +5,8 @@ import os
 
 def get_git_commit_hash():
     try:
-        # 获取本地 Git 仓库的最新 commit hash
-        commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('utf-8').strip()
+        # 获取本地 Git 仓库的最新 commit hash，仅取前6位
+        commit_hash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('utf-8').strip()
         return commit_hash
     except subprocess.CalledProcessError:
         # 如果发生错误（例如不在Git仓库中），返回默认字符串
@@ -105,17 +105,25 @@ def save_node_info():
 
     print("节点信息已保存到 'node.yaml'.")
 
+def pull_and_restart():
+    print("正在拉取更新...")
+    subprocess.run(['git', 'pull', 'origin', 'main'])
+    print("更新已成功拉取。重启程序...")
+    subprocess.run(['python3', 'bash.py'])
+    exit()
+
 def main():
     while True:
-        # 获取本地 Git 仓库的最新 commit hash，并在主菜单中显示
-        commit_hash = get_git_commit_hash()
+        # 获取本地 Git 仓库的最新 commit hash，并在主菜单中显示前6位
+        commit_hash = get_git_commit_hash()[:6]
 
-        print(f"\nDN42 quickshell by sam\n版本号: {commit_hash}")
+        print(f"\nDN42 quickshell by sam\n版本号:v0.1.0( {commit_hash})")
         print("\n请选择功能:")
         print("1. 更新roa")
         print("2. 创建新的BGP会话（仅v4）")
         print("3. 保存你的节点信息")
-        print("4. 退出")
+        print("4. 从远程拉取更新并重启程序")
+        print("5. 退出")
 
         choice = input("输入数字以选择功能: ")
 
@@ -126,6 +134,8 @@ def main():
         elif choice == '3':
             save_node_info()
         elif choice == '4':
+            pull_and_restart()
+        elif choice == '5':
             print("程序结束。")
             break
         else:
