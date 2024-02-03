@@ -42,7 +42,7 @@ AllowedIPs = 10.0.0.0/8, 172.20.0.0/14, 172.31.0.0/16, fd00::/8, fe80::/64
 def generate_bgp_config(peer_name, user_asn, peer_asn, peer_wireguard_endpoint):
     config_template = f'''
 protocol bgp {peer_name} from dnpeers {{
-    neighbor fe80::{peer_asn[-4:]}@{peer_wireguard_endpoint}%"{peer_name}" as {peer_asn};
+    neighbor fe80::{peer_asn[-4:]}%"{peer_name}" as {peer_asn};
     direct;
 }}'''
 
