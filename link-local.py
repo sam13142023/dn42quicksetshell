@@ -1,6 +1,6 @@
 import subprocess
 import os
-from config_manager import DN42Config
+from bash import DN42Config
 
 def collect_information():
     """收集信息，支持使用已保存的用户配置"""
