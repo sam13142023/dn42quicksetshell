@@ -220,17 +220,72 @@ def manage_peer_configs():
             print("无效的选择，请重新输入。")
 
 def update_roa_script():
-    url = 'https://sam1314.com/dn42/upgraderoa.sh'
-    response = requests.get(url)
-
-    with open('upgraderoa.sh', 'wb') as file:
-        file.write(response.content)
-
-    # 添加执行权限
-    subprocess.run(['chmod', '+x', 'upgraderoa.sh'])
-
-    # 执行脚本
-    subprocess.run(['./upgraderoa.sh'])
+    """更新ROA配置文件"""
+    print("正在更新ROA配置文件...")
+    
+    try:
+        # 删除旧的ROA配置文件
+        old_files = ['/etc/bird/roa_dn42.conf', '/etc/bird/roa_dn42_v6.conf']
+        for file_path in old_files:
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"已删除旧文件: {file_path}")
+                except PermissionError:
+                    print(f"权限不足，无法删除 {file_path}")
+                except Exception as e:
+                    print(f"删除文件 {file_path} 时出错: {e}")
+        
+        # 下载IPv4 ROA配置
+        print("正在下载IPv4 ROA配置...")
+        ipv4_url = 'https://dn42.burble.com/roa/dn42_roa_bird2_4.conf'
+        response = requests.get(ipv4_url)
+        response.raise_for_status()
+        
+        # 写入临时文件然后移动到目标位置
+        with open('/tmp/dn42_roa.conf', 'w') as f:
+            f.write(response.text)
+        
+        # 移动到最终位置
+        subprocess.run(['mv', '/tmp/dn42_roa.conf', '/etc/bird/dn42_roa.conf'], check=True)
+        subprocess.run(['mv', '/etc/bird/dn42_roa.conf', '/etc/bird/roa_dn42.conf'], check=True)
+        print("IPv4 ROA配置文件已更新")
+        
+        # 下载IPv6 ROA配置
+        print("正在下载IPv6 ROA配置...")
+        ipv6_url = 'https://dn42.burble.com/roa/dn42_roa_bird2_6.conf'
+        response = requests.get(ipv6_url)
+        response.raise_for_status()
+        
+        # 写入临时文件然后移动到目标位置
+        with open('/tmp/dn42_roa_v6.conf', 'w') as f:
+            f.write(response.text)
+        
+        # 移动到最终位置
+        subprocess.run(['mv', '/tmp/dn42_roa_v6.conf', '/etc/bird/dn42_roa_v6.conf'], check=True)
+        subprocess.run(['mv', '/etc/bird/dn42_roa_v6.conf', '/etc/bird/roa_dn42_v6.conf'], check=True)
+        print("IPv6 ROA配置文件已更新")
+        
+        # 重新配置BIRD
+        print("正在重新配置BIRD...")
+        subprocess.run(['birdc', 'configure'], check=True)
+        print("BIRD配置已重新加载")
+        
+        # 显示协议状态
+        print("当前协议状态:")
+        subprocess.run(['birdc', 'show', 'protocol'], check=True)
+        
+        print("✅ ROA更新完成！")
+        
+    except requests.RequestException as e:
+        print(f"下载ROA文件时出错: {e}")
+    except subprocess.CalledProcessError as e:
+        print(f"执行系统命令时出错: {e}")
+    except PermissionError as e:
+        print(f"权限不足: {e}")
+        print("请确保以root权限运行或使用sudo")
+    except Exception as e:
+        print(f"更新ROA配置时发生未知错误: {e}")
 
 def create_new_bgp_session():
     """创建新的BGP会话，支持快速模式（使用已保存的用户配置）"""
