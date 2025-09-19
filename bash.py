@@ -482,6 +482,236 @@ def update_bird_config():
     except Exception as e:
         print(f"保存配置文件时出错: {e}")
 
+def create_wireguard_tunnel():
+    """创建 WireGuard 隧道 (替代 newwg.sh)"""
+    print("=== 创建 WireGuard 隧道 ===")
+    
+    tunnel_name = input("请输入隧道名：")
+    private_key = input("请输入你的私钥：")
+    listen_port = input("请输入你监听的端口：")
+    your_dn42_ip = input("请输入你的dn42 IP：")
+    peer_dn42_ip = input("请输入对方的dn42 IP：")
+    peer_public_key = input("请输入对方的公钥：")
+    peer_endpoint = input("请输入对方的endpoint：")
+
+    content = f"""[Interface]
+PrivateKey = {private_key}
+ListenPort = {listen_port}
+PostUp = ip addr add {your_dn42_ip} peer {peer_dn42_ip} dev %i
+Table = off
+
+[Peer]
+PublicKey = {peer_public_key}
+Endpoint = {peer_endpoint}
+AllowedIPs = 10.0.0.0/8, 172.20.0.0/14, 172.31.0.0/16, fd00::/8, fe80::/64"""
+
+    config_path = f"/etc/wireguard/{tunnel_name}.conf"
+    try:
+        with open(config_path, 'w') as file:
+            file.write(content)
+        print(f"内容已写入到 {config_path} 文件中。")
+        
+        # 启用服务和启动隧道
+        subprocess.run(['sudo', 'systemctl', 'enable', f"wg-quick@{tunnel_name}"], check=True)
+        subprocess.run(['sudo', 'wg-quick', 'up', tunnel_name], check=True)
+        print(f"隧道 {tunnel_name} 已建立。")
+        
+        # 显示WireGuard状态
+        subprocess.run(['sudo', 'wg'], check=False)
+        
+    except PermissionError:
+        print(f"权限不足，无法写入 {config_path}")
+        print("配置内容:")
+        print(content)
+    except subprocess.CalledProcessError as e:
+        print(f"执行系统命令时出错: {e}")
+    except Exception as e:
+        print(f"创建隧道时出错: {e}")
+
+def create_bgp_peer():
+    """创建 BGP 对等配置 (替代 newbgp.sh)"""
+    print("=== 创建 BGP 对等配置 ===")
+    
+    dn42ip = input("请输入对方的dn42ip: ")
+    asn = input("请输入对方的ASN: ")
+    bgp_name = input("请输入BGP会话名字: ")
+
+    config_content = f"""
+protocol bgp {bgp_name} from dnpeers {{
+    neighbor {dn42ip} as {asn};
+    ipv4 {{
+        next hop self;
+        extended next hop on;
+    }};
+}}
+"""
+
+    config_file = f"/etc/bird/peers/{bgp_name}.conf"
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        
+        with open(config_file, 'w') as file:
+            file.write(config_content)
+        print(f"BGP配置已写入 {config_file}")
+        
+        # 重载BIRD配置
+        subprocess.run(['sudo', 'birdc', 'configure'], check=True)
+        subprocess.run(['sudo', 'birdc', 'show', 'protocol'], check=True)
+        
+    except PermissionError:
+        print(f"权限不足，无法写入 {config_file}")
+        print("配置内容:")
+        print(config_content)
+    except subprocess.CalledProcessError as e:
+        print(f"执行BIRD命令时出错: {e}")
+    except Exception as e:
+        print(f"创建BGP配置时出错: {e}")
+
+def setup_peer_complete():
+    """完整的对等点设置 (替代 setapeer.sh)"""
+    print("=== 完整对等点设置 ===")
+    print("这将引导您完成 WireGuard 隧道和 BGP 对等的完整设置。")
+    
+    # 执行WireGuard隧道创建
+    print("\n步骤1: 创建 WireGuard 隧道")
+    create_wireguard_tunnel()
+    
+    print("\n步骤2: 创建 BGP 对等配置")
+    create_bgp_peer()
+    
+    print("\n✅ 对等点设置完成！")
+
+def linklocal_bgp_setup():
+    """Link-Local BGP 配置模式 (替代 link-local.py)"""
+    print("=== Link-Local BGP 配置模式 ===")
+    config = DN42Config()
+    user_info = config.get_user_info()
+    
+    # 初始化返回字典
+    information = {}
+    
+    if config.is_initialized():
+        print("检测到已保存的用户配置。")
+        use_saved = input("是否使用已保存的用户配置？(y/n): ")
+        
+        if use_saved.lower() == 'y':
+            # 使用已保存的用户信息
+            information.update({
+                "user_asn": user_info['asn'],
+                "user_wireguard_private_key": user_info['private_key'],
+                "user_wireguard_listen_port": user_info['listen_port']
+            })
+            print(f"使用已保存的配置: ASN {user_info['asn']}")
+        else:
+            # 手动输入用户信息
+            information.update({
+                "user_asn": input("请输入您的 ASN："),
+                "user_wireguard_private_key": input("请输入您的 WireGuard 私钥："),
+                "user_wireguard_listen_port": input("请输入您的 WireGuard 监听端口（一般是对方ASN后五位）：")
+            })
+    else:
+        # 没有保存的配置，手动输入所有用户信息
+        print("尚未检测到用户配置，请手动输入信息。")
+        information.update({
+            "user_asn": input("请输入您的 ASN："),
+            "user_wireguard_private_key": input("请输入您的 WireGuard 私钥："),
+            "user_wireguard_listen_port": input("请输入您的 WireGuard 监听端口（一般是对方ASN后五位）：")
+        })
+    
+    # 总是需要输入的对端信息
+    peer_name = input("请输入您的 peer 名：")
+    peer_asn = input("请输入对方的 ASN：")
+    peer_wireguard_public_key = input("请输入对方的 WireGuard 公钥：")
+    peer_wireguard_endpoint = input("请输入对方的 WireGuard Endpoint：")
+    
+    information.update({
+        "peer_name": peer_name,
+        "peer_asn": peer_asn,
+        "peer_wireguard_public_key": peer_wireguard_public_key,
+        "peer_wireguard_endpoint": peer_wireguard_endpoint
+    })
+    
+    # 保存对端信息到配置文件
+    config.add_peer(peer_name, peer_asn, peer_wireguard_public_key, peer_wireguard_endpoint)
+    print(f"对端 {peer_name} 的信息已保存到配置文件。")
+    
+    # 生成Link-Local WireGuard配置
+    config_template = f'''
+[Interface]
+PrivateKey = {information["user_wireguard_private_key"]}
+ListenPort = {information["user_wireguard_listen_port"]}
+PostUp = ip addr add fe80::{information["user_asn"][-4:]}/64 dev %i
+Table = off
+
+[Peer]
+PublicKey = {information["peer_wireguard_public_key"]}
+Endpoint = {information["peer_wireguard_endpoint"]}
+AllowedIPs = 10.0.0.0/8, 172.20.0.0/14, 172.31.0.0/16, fd00::/8, fe80::/64
+'''
+
+    # 将WireGuard配置写入文件
+    config_path = f"/etc/wireguard/{peer_name}.conf"
+    try:
+        with open(config_path, "w") as file:
+            file.write(config_template)
+        print(f"WireGuard 配置文件已生成并保存至 {config_path}")
+    except PermissionError:
+        print(f"权限不足，无法写入 {config_path}")
+        print("配置内容:")
+        print(config_template)
+        return
+    except Exception as e:
+        print(f"生成WireGuard配置文件时出错: {e}")
+        return
+
+    # 生成Link-Local BGP配置
+    bgp_config_template = f'''
+protocol bgp {peer_name} from dnpeers {{
+    neighbor fe80::{peer_asn[-4:]}%"{peer_name}" as {peer_asn};
+    direct;
+}}'''
+
+    # 将BGP配置写入文件
+    bgp_config_path = f"/etc/bird/peers/{peer_name}.conf"
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(bgp_config_path), exist_ok=True)
+        
+        with open(bgp_config_path, "w") as file:
+            file.write(bgp_config_template)
+        print(f"BGP 配置文件已生成并保存至 {bgp_config_path}")
+    except PermissionError:
+        print(f"权限不足，无法写入 {bgp_config_path}")
+        print("配置内容:")
+        print(bgp_config_template)
+        return
+    except Exception as e:
+        print(f"生成BGP配置文件时出错: {e}")
+        return
+
+    # 启用WireGuard服务
+    try:
+        subprocess.run(["systemctl", "enable", f"wg-quick@{peer_name}.service"], check=True)
+        subprocess.run(["service", f"wg-quick@{peer_name}", "start"], check=True)
+        print(f"WireGuard服务 {peer_name} 已启用并启动")
+    except subprocess.CalledProcessError as e:
+        print(f"启用WireGuard服务时出错: {e}")
+    except Exception as e:
+        print(f"启用WireGuard服务时发生未知错误: {e}")
+
+    # 重启BIRD服务
+    try:
+        subprocess.run(["birdc", "c"], check=True)
+        subprocess.run(["birdc", "s", "p"], check=True)
+        print("BIRD服务已重新配置")
+    except subprocess.CalledProcessError as e:
+        print(f"重启BIRD服务时出错: {e}")
+    except Exception as e:
+        print(f"重启BIRD服务时发生未知错误: {e}")
+
+    print("\n✅ Link-Local BGP 配置完成！")
+
 def main():
     config = DN42Config()
     
@@ -507,7 +737,11 @@ def main():
         print("6. 初始化用户配置")
         print("7. 查看用户配置")
         print("8. 管理对端配置")
-        print("9. 退出")
+        print("9. 创建 WireGuard 隧道")
+        print("10. 创建 BGP 对等配置")
+        print("11. 完整对等点设置")
+        print("12. Link-Local BGP 配置")
+        print("13. 退出")
 
         choice = input("输入数字以选择功能: ")
 
@@ -528,6 +762,14 @@ def main():
         elif choice == '8':
             manage_peer_configs()
         elif choice == '9':
+            create_wireguard_tunnel()
+        elif choice == '10':
+            create_bgp_peer()
+        elif choice == '11':
+            setup_peer_complete()
+        elif choice == '12':
+            linklocal_bgp_setup()
+        elif choice == '13':
             print("程序结束。")
             break
         else:
