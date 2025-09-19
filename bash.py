@@ -509,11 +509,19 @@ def update_bird_config():
         return
 
     # 替换示例配置文件中的信息
-    updated_conf_content = example_conf_content.replace("$OWNAS", own_as)\
-                                               .replace("$OWNIP", own_ip)\
-                                               .replace("$OWNIPv6", own_ipv6)\
-                                               .replace("$OWNNET", own_net)\
-                                               .replace("$OWNNETv6", own_net_v6)
+    # 为了避免子字符串替换问题（如$OWNIP影响$OWNIPv6），按长度降序替换
+    # 确保所有值都是字符串类型，避免None值引起的错误
+    replacements = {
+        "$OWNNETv6": str(own_net_v6) if own_net_v6 else "",
+        "$OWNIPv6": str(own_ipv6) if own_ipv6 else "",  
+        "$OWNNET": str(own_net) if own_net else "",
+        "$OWNAS": str(own_as) if own_as else "",
+        "$OWNIP": str(own_ip) if own_ip else ""
+    }
+    
+    updated_conf_content = example_conf_content
+    for placeholder, value in replacements.items():
+        updated_conf_content = updated_conf_content.replace(placeholder, value)
 
     # 检查是否存在旧的配置文件，如果存在则备份
     bird_conf_path = '/etc/bird/bird.conf'
