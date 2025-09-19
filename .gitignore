@@ -1,0 +1,15 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configuration files that might contain sensitive information
+*.yaml
+*.yml
+config.json
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
